@@ -1,19 +1,18 @@
 'use client';
 
-import { useState, useRef, Suspense } from 'react';
+import { useRef, Suspense } from 'react';
 import { Canvas, useFrame } from '@react-three/fiber';
 import { Points, PointMaterial, Preload } from '@react-three/drei';
-// A biblioteca 'maath' é ótima para matemática 3D, vamos instalá-la
 import { inSphere } from 'maath/random';
+import * as THREE from 'three'; // Importa a biblioteca Three.js para tipos
 
 // Componente interno para a lógica das estrelas
 function Stars(props: any) {
-  const ref = useRef<any>(null); // CORREÇÃO: Adicionado valor inicial 'null'
-
-  // Cria 5000 pontos posicionados aleatoriamente dentro de uma esfera
+  // CORREÇÃO: Adicionada a tipagem correta para a referência (ref)
+  const ref = useRef<THREE.Points>(null); 
+  
   const sphere = inSphere(new Float32Array(5000), { radius: 1.5 });
 
-  // useFrame é um hook que executa em cada frame da animação
   useFrame((_state, delta) => {
     if (ref.current) {
         ref.current.rotation.x -= delta / 10;
@@ -26,7 +25,7 @@ function Stars(props: any) {
       <Points ref={ref} positions={sphere} stride={3} frustumCulled {...props}>
         <PointMaterial
           transparent
-          color="#0ea5e9" // Cor sky-500 do Tailwind
+          color="#0ea5e9"
           size={0.005}
           sizeAttenuation={true}
           depthWrite={false}

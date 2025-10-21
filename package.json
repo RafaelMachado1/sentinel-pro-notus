@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@prisma/client": "^6.17.1",
     "@rainbow-me/rainbowkit": "^2.2.9",
     "@react-three/drei": "^10.7.6",
     "@react-three/fiber": "^9.4.0",

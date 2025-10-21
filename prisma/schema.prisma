@@ -1,15 +1,29 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
-  output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  url      = env("POSTGRES_PRISMA_URL")
+}
+
+model Rule {
+  id                  String    @id @default(cuid())
+  name                String
+  ownerAddress        String
+  networkId           String
+  contractAddress     String
+  eventName           String
+  notusSubscriptionId String    @unique
+  action              Action?
+  createdAt           DateTime  @default(now())
+  @@index([ownerAddress])
+}
+
+model Action {
+  id        String   @id @default(cuid())
+  ruleId    String   @unique
+  rule      Rule     @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  type      String
+  targetUrl String
 }

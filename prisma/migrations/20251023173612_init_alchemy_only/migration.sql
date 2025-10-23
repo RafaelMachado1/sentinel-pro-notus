@@ -6,7 +6,7 @@ CREATE TABLE "Rule" (
     "networkId" TEXT NOT NULL,
     "contractAddress" TEXT NOT NULL,
     "eventName" TEXT NOT NULL,
-    "notusSubscriptionId" TEXT NOT NULL,
+    "alchemyWebhookId" TEXT NOT NULL,
     "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
 
     CONSTRAINT "Rule_pkey" PRIMARY KEY ("id")
@@ -18,13 +18,12 @@ CREATE TABLE "Action" (
     "ruleId" TEXT NOT NULL,
     "type" TEXT NOT NULL,
     "targetUrl" TEXT NOT NULL,
-    "webhookSecret" TEXT,
 
     CONSTRAINT "Action_pkey" PRIMARY KEY ("id")
 );
 
 -- CreateIndex
-CREATE UNIQUE INDEX "Rule_notusSubscriptionId_key" ON "Rule"("notusSubscriptionId");
+CREATE UNIQUE INDEX "Rule_alchemyWebhookId_key" ON "Rule"("alchemyWebhookId");
 
 -- CreateIndex
 CREATE INDEX "Rule_ownerAddress_idx" ON "Rule"("ownerAddress");

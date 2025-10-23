@@ -1,13 +1,13 @@
 'use server';
 import { unstable_noStore as noStore } from 'next/cache';
-// IMPORTS ADICIONADOS PARA O MARCO 7
+// Imports do Marco 7
 import { PrismaClient } from '@prisma/client';
 import { revalidatePath } from 'next/cache';
 
-// CLIENTE PRISMA ADICIONADO PARA O MARCO 7
+// Cliente Prisma do Marco 7
 const prisma = new PrismaClient();
 
-// Tipos de dados para o nosso portfólio (Do MARCO 5)
+// --- LÓGICA DO MARCO 5 ---
 export interface PortfolioAsset {
   name: string;
   symbol: string;
@@ -24,24 +24,16 @@ export interface PortfolioData {
 const NOTUS_API_KEY = process.env.NOTUS_API_KEY;
 const NOTUS_API_URL = 'https://api.notus.team/v1';
 
-// --- LÓGICA DO MARCO 5 ---
 export async function getPortfolioData(walletAddress: string, networkId: string = 'sepolia-testnet'): Promise<PortfolioData> {
-  noStore(); // Marca esta função como dinâmica
+  noStore(); 
   if (!NOTUS_API_KEY) {
     throw new Error('NOTUS_API_KEY is not configured');
   }
-
   const headers = { 'X-Api-Key': NOTUS_API_KEY, 'Content-Type': 'application/json' };
-
   try {
-    // 1. Buscar os tokens da carteira
     const tokensResponse = await fetch(`${NOTUS_API_URL}/wallets/${walletAddress}/tokens?networkId=${networkId}`, { headers });
     if (!tokensResponse.ok) throw new Error('Failed to fetch tokens');
     const tokensData = await tokensResponse.json();
-
-    // 2. Buscar os preços desses tokens
-    const tokenAddresses = tokensData.data.map((token: any) => token.address);
-
     const assets: PortfolioAsset[] = await Promise.all(
       tokensData.data.map(async (token: any): Promise<PortfolioAsset> => {
         let usdPrice = 0;
@@ -54,10 +46,8 @@ export async function getPortfolioData(walletAddress: string, networkId: string 
         } catch (priceError) {
           console.warn(`Could not fetch price for ${token.symbol}: ${priceError}`);
         }
-
         const balance = (BigInt(token.balance) / BigInt(10 ** token.decimals)).toString();
         const usdValue = parseFloat(balance) * usdPrice;
-
         return {
           name: token.name,
           symbol: token.symbol,
@@ -67,29 +57,24 @@ export async function getPortfolioData(walletAddress: string, networkId: string 
         };
       })
     );
-
-    // 3. Calcular o total
     const totalUsdValue = assets.reduce((acc, asset) => acc + asset.usdValue, 0);
-
     return {
       totalUsdValue,
       assets,
     };
-
   } catch (error) {
     console.error('Error fetching portfolio data:', error);
     return { totalUsdValue: 0, assets: [] };
   }
 }
 
-// --- LÓGICA ADICIONADA PARA O MARCO 7 ---
+// --- LÓGICA DO MARCO 7 (REVISADA) ---
 
 //
-// FUNÇÃO PARA CRIAR A REGRA
+// FUNÇÃO PARA CRIAR A REGRA (REVISADA)
 //
 export async function createSentinelRule(formData: FormData) {
   const NOTUS_API_KEY = process.env.NOTUS_API_KEY;
-  // Este é o endpoint que o MARCO 8 irá construir
   const WEBHOOK_URL = `${process.env.NEXT_PUBLIC_SITE_URL}/api/notus-webhook`;
 
   // 1. Extrair dados do formulário
@@ -107,7 +92,7 @@ export async function createSentinelRule(formData: FormData) {
     networkId: ruleData.networkId,
     address: ruleData.contractAddress,
     webhookUrl: WEBHOOK_URL,
-    abi: `[{ "type": "event", "name": "${ruleData.eventName}", "inputs": [] }]` // ABI simplificado
+    abi: `[{ "type: "event", "name": "${ruleData.eventName}", "inputs": [] }]`
   };
 
   const response = await fetch(`${NOTUS_API_URL}/webhooks`, {
@@ -122,9 +107,18 @@ export async function createSentinelRule(formData: FormData) {
   }
 
   const notusData = await response.json();
+  
+  // --- MUDANÇA DE ARQUITETURA AQUI ---
+  // A API da Notus (Svix) retorna o 'id' e o 'secret' no objeto 'data'.
   const subscriptionId = notusData.data.id;
+  const webhookSecret = notusData.data.secret; // <-- ESTA É A NOVA LINHA
 
-  // 3. Salvar a regra e a ação no nosso DB
+  if (!subscriptionId || !webhookSecret) {
+    throw new Error('Notus API response is missing id or secret');
+  }
+  // --- FIM DA MUDANÇA ---
+
+  // 3. Salvar a regra e a ação no nosso DB (com o segredo)
   try {
     await prisma.rule.create({
       data: {
@@ -133,11 +127,12 @@ export async function createSentinelRule(formData: FormData) {
         networkId: ruleData.networkId,
         contractAddress: ruleData.contractAddress,
         eventName: ruleData.eventName,
-        notusSubscriptionId: subscriptionId, // A "chave" de conexão
+        notusSubscriptionId: subscriptionId, // Este é o 'id' (ex: ep_...)
         action: {
           create: {
             type: 'DISCORD_WEBHOOK',
             targetUrl: ruleData.discordUrl,
+            webhookSecret: webhookSecret, // <-- SALVAMOS O SEGREDO NO DB
           },
         },
       },
@@ -152,8 +147,8 @@ export async function createSentinelRule(formData: FormData) {
   revalidatePath('/dashboard');
 }
 
-//
-// FUNÇÃO PARA LER AS REGRAS
+//p
+// FUNÇÃO PARA LER AS REGRAS (sem mudanças, mas incluída)
 //
 export async function getSentinelRules(ownerAddress: string) {
   noStore(); // Sempre buscar as regras mais recentes

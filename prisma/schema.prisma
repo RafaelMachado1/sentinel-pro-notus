@@ -26,4 +26,5 @@ model Action {
   rule      Rule     @relation(fields: [ruleId], references: [id], onDelete: Cascade)
   type      String
   targetUrl String
+  webhookSecret String?
 }

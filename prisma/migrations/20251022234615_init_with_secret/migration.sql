@@ -18,6 +18,7 @@ CREATE TABLE "Action" (
     "ruleId" TEXT NOT NULL,
     "type" TEXT NOT NULL,
     "targetUrl" TEXT NOT NULL,
+    "webhookSecret" TEXT,
 
     CONSTRAINT "Action_pkey" PRIMARY KEY ("id")
 );

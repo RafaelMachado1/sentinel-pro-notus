@@ -21,7 +21,6 @@ export interface PortfolioData {
 // --- CONFIGURAÇÃO ALCHEMY ---
 const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY;
 const ALCHEMY_WEBHOOK_SIGNING_SECRET = process.env.ALCHEMY_WEBHOOK_SIGNING_SECRET; // Para webhook listener e API REST Auth
-const ALCHEMY_SEPOLIA_URL = `https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_API_KEY}`;
 const ALCHEMY_APP_ID = process.env.ALCHEMY_APP_ID; // Para criar webhooks
 // --- FIM CONFIGURAÇÃO ALCHEMY ---
 
@@ -75,9 +74,7 @@ export async function getPortfolioData(walletAddress: string, networkId: string 
 
     if (!balancesResponse.ok) {
         console.error(`[Alchemy Portfolio V5] getTokenBalances failed! Status: ${balancesResponse.status}, Body: ${balancesBodyText}`);
-        // Retorna vazio para o usuário, mas o erro já está logado
-        return { totalUsdValue: 0, assets: [] };
-        // throw new Error(`Failed to fetch token balances from Alchemy. Status: ${balancesResponse.status}`); // Não lança erro para não quebrar UI
+        return { totalUsdValue: 0, assets: [] }; // Não lança erro para UI
     }
 
     let balancesData;
@@ -86,10 +83,9 @@ export async function getPortfolioData(walletAddress: string, networkId: string 
     } catch (e) {
         console.error('[Alchemy Portfolio V5] Failed to parse JSON response from getTokenBalances:', e);
         console.error('[Alchemy Portfolio V5] Response body was:', balancesBodyText);
-        return { totalUsdValue: 0, assets: [] }; // Retorna vazio se não puder parsear
+        return { totalUsdValue: 0, assets: [] }; // Retorna vazio
     }
 
-    // Verifica estrutura ANTES de acessar .result
     if (balancesData.error || !balancesData.result?.tokenBalances || !Array.isArray(balancesData.result.tokenBalances)) {
         console.error('[Alchemy Portfolio V5] Invalid response structure from getTokenBalances:', balancesData);
         return { totalUsdValue: 0, assets: [] };
@@ -99,11 +95,12 @@ export async function getPortfolioData(walletAddress: string, networkId: string 
 
     // 2. Buscar metadados
     const assetsPromises = tokenBalances
-      .filter((b: any) => b.tokenBalance && b.tokenBalance !== '0x0') // Filtra saldos zero
+      .filter((b: any) => b.tokenBalance && b.tokenBalance !== '0x0')
       .map(async (b: any): Promise<PortfolioAsset | null> => {
           const contractAddress = b.contractAddress;
           try {
               // console.log(`[Alchemy Portfolio V5] Calling alchemy_getTokenMetadata for ${contractAddress}`); // Opcional
+              // (Não adicionamos DIAG V5 aqui para não poluir muito, focamos nos blocantes)
               const metadataResponse = await fetch(alchemyRpcUrl, { // Usa a mesma URL RPC
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -124,7 +121,6 @@ export async function getPortfolioData(walletAddress: string, networkId: string 
               const decimals = (typeof metadata.decimals === 'number' && metadata.decimals >= 0) ? metadata.decimals : 18;
               const balanceBigInt = BigInt(b.tokenBalance);
               const balanceNumber = Number(balanceBigInt) / (10 ** decimals);
-              // Formatação consistente
               const balanceFormatted = balanceNumber.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 6 });
               return {
                   name: metadata.name || 'Unknown Token',
@@ -165,7 +161,12 @@ export async function getPortfolioData(walletAddress: string, networkId: string 
 
         if (nativeBalanceResponse.ok) {
              let nativeBalanceData;
-             try { nativeBalanceData = JSON.parse(nativeBalanceBodyText); } catch(e) { throw new Error('Failed to parse eth_getBalance JSON');} // Lança erro se falhar aqui
+             try { nativeBalanceData = JSON.parse(nativeBalanceBodyText); } catch(e) {
+                 console.error('[Alchemy Portfolio V5] Failed to parse eth_getBalance JSON:', e);
+                 console.error('[Alchemy Portfolio V5] Response body was:', nativeBalanceBodyText);
+                 // Não lança erro fatal, apenas não adiciona ETH
+                 nativeBalanceData = { result: null }; // Define um fallback
+             }
 
              if (nativeBalanceData.result) {
                  const balanceWei = BigInt(nativeBalanceData.result);
@@ -177,17 +178,17 @@ export async function getPortfolioData(walletAddress: string, networkId: string 
                  console.warn(`[Alchemy Portfolio V5] eth_getBalance ok but no result. Data:`, nativeBalanceData);
              }
         } else {
-             // O log de erro agora está aqui, não precisamos do [DIAG V5] novamente
+             // O log de erro agora está aqui
              console.error(`[Alchemy Portfolio V5] eth_getBalance failed. Status: ${nativeBalanceResponse.status}, Body: ${nativeBalanceBodyText}`);
-             // Não lança erro fatal, apenas não adiciona ETH
+             // Não lança erro fatal
         }
     } catch (nativeError) {
         console.error('[Alchemy Portfolio V5] CRITICAL Error fetching native balance:', nativeError);
-         // Não lança erro fatal, apenas não adiciona ETH
+         // Não lança erro fatal
     }
 
     console.log(`[Alchemy Portfolio V5] Processed. Total assets (incl. native): ${validAssets.length}`);
-    return { totalUsdValue: 0, assets: validAssets }; // Sempre retorna 0 para valor total por enquanto
+    return { totalUsdValue: 0, assets: validAssets };
 
   } catch (error) {
     // Captura erros lançados pelos JSON.parse ou outros erros inesperados

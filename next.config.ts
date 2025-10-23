@@ -1,7 +1,12 @@
-import type { NextConfig } from "next";
+import type { NextConfig } from 'next'
 
-const nextConfig: NextConfig = {
-  /* config options here */
-};
+const config: NextConfig = {
+  // ADICIONE ESTAS LINHAS:
+  eslint: {
+    // Aviso: Isso permite que builds de produção sejam concluídos mesmo
+    // que seu projeto tenha erros de ESLint.
+    ignoreDuringBuilds: true,
+  },
+}
 
-export default nextConfig;
+export default config

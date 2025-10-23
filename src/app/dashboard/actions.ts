@@ -1,5 +1,5 @@
 'use server';
-// FORÇANDO UM NOVO BUILD EM: 23/10 11:28
+// FORÇANDO UM NOVO BUILD EM: 23/10 11:42 (Hora atual)
 import { unstable_noStore as noStore } from 'next/cache';
 // Imports do Marco 7
 import { PrismaClient } from '@prisma/client';
@@ -25,20 +25,42 @@ export interface PortfolioData {
 const NOTUS_API_KEY = process.env.NOTUS_API_KEY;
 const NOTUS_API_URL = 'https://api.notus.team/v1';
 
+// FUNÇÃO getPortfolioData (CORRIGIDA + MODO DEBUG)
 export async function getPortfolioData(walletAddress: string, networkId: string = 'sepolia-testnet'): Promise<PortfolioData> {
-  noStore(); 
+  noStore();
   if (!NOTUS_API_KEY) {
     throw new Error('NOTUS_API_KEY is not configured');
   }
-  const headers = { 'X-Api-Key': NOTUS_API_KEY, 'Content-Type': 'application/json' };
+
+  // --- CORREÇÃO 1: Testando formato do header ---
+  const headers = {
+    'Authorization': `Bearer ${NOTUS_API_KEY}`, // MUDADO DE X-Api-Key
+    'Content-Type': 'application/json'
+  };
+  // --- FIM DA CORREÇÃO 1 ---
+
+  const url = `${NOTUS_API_URL}/wallets/${walletAddress}/tokens?networkId=${networkId}`;
+
   try {
-    const tokensResponse = await fetch(`${NOTUS_API_URL}/wallets/${walletAddress}/tokens?networkId=${networkId}`, { headers });
-    if (!tokensResponse.ok) throw new Error('Failed to fetch tokens');
+    console.log(`[DEBUG] Fetching Notus data from: ${url}`);
+    const tokensResponse = await fetch(url, { headers });
+
+    // --- BLOCO DE DEBUG (MANTIDO) ---
+    if (!tokensResponse.ok) {
+      const errorBody = await tokensResponse.text();
+      console.error(`[DEBUG] Notus API Error! Status: ${tokensResponse.status}`);
+      console.error(`[DEBUG] Notus API Body: ${errorBody}`);
+      throw new Error(`Failed to fetch tokens. Status: ${tokensResponse.status}`);
+    }
+    // --- FIM DO BLOCO DE DEBUG ---
+
     const tokensData = await tokensResponse.json();
+
     const assets: PortfolioAsset[] = await Promise.all(
       tokensData.data.map(async (token: any): Promise<PortfolioAsset> => {
         let usdPrice = 0;
         try {
+          // Usa os mesmos headers corrigidos para a chamada de preço
           const priceResponse = await fetch(`${NOTUS_API_URL}/tokens/${token.address}/price?networkId=${networkId}`, { headers });
           if (priceResponse.ok) {
             const priceData = await priceResponse.json();
@@ -59,20 +81,24 @@ export async function getPortfolioData(walletAddress: string, networkId: string 
       })
     );
     const totalUsdValue = assets.reduce((acc, asset) => acc + asset.usdValue, 0);
+
+    console.log(`[DEBUG] Portfolio data fetched successfully. Assets: ${assets.length}`);
     return {
       totalUsdValue,
       assets,
     };
+
   } catch (error) {
     console.error('Error fetching portfolio data:', error);
     return { totalUsdValue: 0, assets: [] };
   }
 }
 
+
 // --- LÓGICA DO MARCO 7 (REVISADA) ---
 
 //
-// FUNÇÃO PARA CRIAR A REGRA (REVISADA)
+// FUNÇÃO PARA CRIAR A REGRA (CORRIGIDA)
 //
 export async function createSentinelRule(formData: FormData) {
   const NOTUS_API_KEY = process.env.NOTUS_API_KEY;
@@ -93,31 +119,40 @@ export async function createSentinelRule(formData: FormData) {
     networkId: ruleData.networkId,
     address: ruleData.contractAddress,
     webhookUrl: WEBHOOK_URL,
-    abi: `[{ "type: "event", "name": "${ruleData.eventName}", "inputs": [] }]`
+    // --- CORREÇÃO 2: String ABI ---
+    abi: `[{ "type": "event", "name": "${ruleData.eventName}", "inputs": [] }]` // ASPAS CORRIGIDAS
+    // --- FIM DA CORREÇÃO 2 ---
   };
+
+  // --- Usa o mesmo formato de header corrigido ---
+  const headers = {
+    'Authorization': `Bearer ${NOTUS_API_KEY}`,
+    'Content-Type': 'application/json'
+  };
+  // ---
 
   const response = await fetch(`${NOTUS_API_URL}/webhooks`, {
     method: 'POST',
-    headers: { 'X-Api-Key': NOTUS_API_KEY!, 'Content-Type': 'application/json' },
+    headers: headers, // Usa os headers corrigidos
     body: JSON.stringify(notusPayload),
   });
 
   if (!response.ok) {
-    console.error(await response.json());
-    throw new Error('Failed to create Notus webhook subscription');
+    // Adiciona log de debug aqui também
+    const errorBody = await response.text();
+    console.error(`[DEBUG] Notus API Error (Webhook Creation)! Status: ${response.status}`);
+    console.error(`[DEBUG] Notus API Body (Webhook Creation): ${errorBody}`);
+    throw new Error(`Failed to create Notus webhook subscription. Status: ${response.status}`);
   }
 
   const notusData = await response.json();
-  
-  // --- MUDANÇA DE ARQUITETURA AQUI ---
-  // A API da Notus (Svix) retorna o 'id' e o 'secret' no objeto 'data'.
+
   const subscriptionId = notusData.data.id;
-  const webhookSecret = notusData.data.secret; // <-- ESTA É A NOVA LINHA
+  const webhookSecret = notusData.data.secret;
 
   if (!subscriptionId || !webhookSecret) {
     throw new Error('Notus API response is missing id or secret');
   }
-  // --- FIM DA MUDANÇA ---
 
   // 3. Salvar a regra e a ação no nosso DB (com o segredo)
   try {
@@ -128,12 +163,12 @@ export async function createSentinelRule(formData: FormData) {
         networkId: ruleData.networkId,
         contractAddress: ruleData.contractAddress,
         eventName: ruleData.eventName,
-        notusSubscriptionId: subscriptionId, // Este é o 'id' (ex: ep_...)
+        notusSubscriptionId: subscriptionId,
         action: {
           create: {
             type: 'DISCORD_WEBHOOK',
             targetUrl: ruleData.discordUrl,
-            webhookSecret: webhookSecret, // <-- SALVAMOS O SEGREDO NO DB
+            webhookSecret: webhookSecret,
           },
         },
       },
@@ -143,16 +178,16 @@ export async function createSentinelRule(formData: FormData) {
     // TODO: Idealmente, deveríamos deletar a subscrição da Notus se o DB falhar.
     throw new Error('Failed to save rule to database');
   }
-  
+
   // 4. Revalidar o cache do dashboard para mostrar a nova regra
   revalidatePath('/dashboard');
 }
 
-//p
-// FUNÇÃO PARA LER AS REGRAS (sem mudanças, mas incluída)
+//
+// FUNÇÃO PARA LER AS REGRAS (sem mudanças)
 //
 export async function getSentinelRules(ownerAddress: string) {
-  noStore(); // Sempre buscar as regras mais recentes
+  noStore();
   const rules = await prisma.rule.findMany({
     where: { ownerAddress },
     orderBy: { createdAt: 'desc' },

@@ -1,5 +1,5 @@
 'use server';
-// FORÇANDO UM NOVO BUILD EM: 23/10 11:42 (Hora atual)
+// FORÇANDO UM NOVO BUILD EM: 23/10 11:51 (Diagnóstico V3)
 import { unstable_noStore as noStore } from 'next/cache';
 // Imports do Marco 7
 import { PrismaClient } from '@prisma/client';
@@ -25,16 +25,16 @@ export interface PortfolioData {
 const NOTUS_API_KEY = process.env.NOTUS_API_KEY;
 const NOTUS_API_URL = 'https://api.notus.team/v1';
 
-// FUNÇÃO getPortfolioData (CORRIGIDA + MODO DEBUG)
+// FUNÇÃO getPortfolioData (MODO DEBUG V3: Log da resposta crua)
 export async function getPortfolioData(walletAddress: string, networkId: string = 'sepolia-testnet'): Promise<PortfolioData> {
   noStore();
   if (!NOTUS_API_KEY) {
     throw new Error('NOTUS_API_KEY is not configured');
   }
 
-  // --- CORREÇÃO 1: Testando formato do header ---
+  // --- CORREÇÃO 1: Revertendo o formato do header para o original ---
   const headers = {
-    'Authorization': `Bearer ${NOTUS_API_KEY}`, // MUDADO DE X-Api-Key
+    'X-Api-Key': NOTUS_API_KEY, // REVERTIDO PARA X-Api-Key
     'Content-Type': 'application/json'
   };
   // --- FIM DA CORREÇÃO 1 ---
@@ -56,35 +56,49 @@ export async function getPortfolioData(walletAddress: string, networkId: string 
 
     const tokensData = await tokensResponse.json();
 
+    // --- NOVO LOG DE DIAGNÓSTICO V3 ---
+    console.log(`[DEBUG] Raw tokensData received:`, JSON.stringify(tokensData, null, 2));
+    // --- FIM DO NOVO LOG ---
+
+    // Adiciona uma verificação extra para garantir que 'data' existe e é um array
+    if (!tokensData || !Array.isArray(tokensData.data)) {
+        console.warn('[DEBUG] Unexpected response structure from Notus API:', tokensData);
+        return { totalUsdValue: 0, assets: [] }; // Retorna vazio se a estrutura estiver errada
+    }
+
     const assets: PortfolioAsset[] = await Promise.all(
       tokensData.data.map(async (token: any): Promise<PortfolioAsset> => {
         let usdPrice = 0;
         try {
-          // Usa os mesmos headers corrigidos para a chamada de preço
+          // Usa os mesmos headers (revertidos) para a chamada de preço
           const priceResponse = await fetch(`${NOTUS_API_URL}/tokens/${token.address}/price?networkId=${networkId}`, { headers });
           if (priceResponse.ok) {
             const priceData = await priceResponse.json();
-            usdPrice = priceData.data.usdPrice;
+            usdPrice = priceData?.data?.usdPrice || 0; // Adiciona fallback
           }
         } catch (priceError) {
           console.warn(`Could not fetch price for ${token.symbol}: ${priceError}`);
         }
-        const balance = (BigInt(token.balance) / BigInt(10 ** token.decimals)).toString();
+        // Adiciona verificações para evitar erros se token.balance ou token.decimals forem inesperados
+        const balanceBigInt = token.balance ? BigInt(token.balance) : BigInt(0);
+        const decimals = (typeof token.decimals === 'number' && token.decimals >= 0) ? token.decimals : 18; // Default para 18 se ausente/inválido
+        const balance = (balanceBigInt / BigInt(10 ** decimals)).toString();
+
         const usdValue = parseFloat(balance) * usdPrice;
         return {
-          name: token.name,
-          symbol: token.symbol,
+          name: token.name || 'Unknown Token', // Adiciona fallback
+          symbol: token.symbol || '???', // Adiciona fallback
           balance: balance,
           usdPrice: usdPrice,
-          usdValue: usdValue,
+          usdValue: isNaN(usdValue) ? 0 : usdValue, // Evita NaN
         };
       })
     );
     const totalUsdValue = assets.reduce((acc, asset) => acc + asset.usdValue, 0);
 
-    console.log(`[DEBUG] Portfolio data fetched successfully. Assets: ${assets.length}`);
+    console.log(`[DEBUG] Portfolio data processed successfully. Assets found: ${assets.length}`);
     return {
-      totalUsdValue,
+      totalUsdValue: isNaN(totalUsdValue) ? 0 : totalUsdValue, // Evita NaN
       assets,
     };
 
@@ -119,26 +133,24 @@ export async function createSentinelRule(formData: FormData) {
     networkId: ruleData.networkId,
     address: ruleData.contractAddress,
     webhookUrl: WEBHOOK_URL,
-    // --- CORREÇÃO 2: String ABI ---
-    abi: `[{ "type": "event", "name": "${ruleData.eventName}", "inputs": [] }]` // ASPAS CORRIGIDAS
-    // --- FIM DA CORREÇÃO 2 ---
+    // --- String ABI CORRIGIDA ---
+    abi: `[{ "type": "event", "name": "${ruleData.eventName}", "inputs": [] }]`
   };
 
-  // --- Usa o mesmo formato de header corrigido ---
+  // --- Revertendo o formato do header ---
   const headers = {
-    'Authorization': `Bearer ${NOTUS_API_KEY}`,
+    'X-Api-Key': NOTUS_API_KEY!, // REVERTIDO PARA X-Api-Key
     'Content-Type': 'application/json'
   };
   // ---
 
   const response = await fetch(`${NOTUS_API_URL}/webhooks`, {
     method: 'POST',
-    headers: headers, // Usa os headers corrigidos
+    headers: headers, // Usa os headers revertidos
     body: JSON.stringify(notusPayload),
   });
 
   if (!response.ok) {
-    // Adiciona log de debug aqui também
     const errorBody = await response.text();
     console.error(`[DEBUG] Notus API Error (Webhook Creation)! Status: ${response.status}`);
     console.error(`[DEBUG] Notus API Body (Webhook Creation): ${errorBody}`);
@@ -147,10 +159,11 @@ export async function createSentinelRule(formData: FormData) {
 
   const notusData = await response.json();
 
-  const subscriptionId = notusData.data.id;
-  const webhookSecret = notusData.data.secret;
+  const subscriptionId = notusData?.data?.id; // Adiciona fallback
+  const webhookSecret = notusData?.data?.secret; // Adiciona fallback
 
   if (!subscriptionId || !webhookSecret) {
+      console.error('[DEBUG] Invalid response structure from Notus webhook creation:', notusData);
     throw new Error('Notus API response is missing id or secret');
   }
 

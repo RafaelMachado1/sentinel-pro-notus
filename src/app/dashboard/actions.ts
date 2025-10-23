@@ -20,12 +20,13 @@ export interface PortfolioData {
 
 // --- CONFIGURAÇÃO ALCHEMY ---
 const ALCHEMY_API_KEY = process.env.ALCHEMY_API_KEY;
-const ALCHEMY_WEBHOOK_SIGNING_SECRET = process.env.ALCHEMY_WEBHOOK_SIGNING_SECRET; // Para webhook listener e API REST Auth
-const ALCHEMY_APP_ID = process.env.ALCHEMY_APP_ID; // Para criar webhooks
+const ALCHEMY_WEBHOOK_SIGNING_SECRET = process.env.ALCHEMY_WEBHOOK_SIGNING_SECRET; // Para webhook listener
+// Removido ALCHEMY_APP_ID pois não estamos criando webhooks programaticamente agora
+// const ALCHEMY_APP_ID = process.env.ALCHEMY_APP_ID;
 // --- FIM CONFIGURAÇÃO ALCHEMY ---
 
 
-// --- FUNÇÃO getPortfolioData (MODO DIAGNÓSTICO V5 - Foco no Fetch) ---
+// --- FUNÇÃO getPortfolioData (MODO DIAGNÓSTICO V5 - Foco no Fetch - Mantida) ---
 export async function getPortfolioData(walletAddress: string, networkId: string = 'sepolia-testnet'): Promise<PortfolioData> {
   noStore();
   console.log(`[Alchemy Portfolio V5] Fetching for ${walletAddress} on ${networkId}`);
@@ -69,7 +70,6 @@ export async function getPortfolioData(walletAddress: string, networkId: string 
 
     console.log(`[Alchemy Portfolio V5] Balances response status: ${balancesResponse.status}`);
     const balancesBodyText = await balancesResponse.text(); // Lê como texto primeiro
-    // Log do corpo completo se for pequeno, senão truncado
     console.log(`[Alchemy Portfolio V5] Raw getTokenBalances response body:`, balancesBodyText.length < 1000 ? balancesBodyText : balancesBodyText.substring(0, 500) + '...');
 
     if (!balancesResponse.ok) {
@@ -99,9 +99,7 @@ export async function getPortfolioData(walletAddress: string, networkId: string 
       .map(async (b: any): Promise<PortfolioAsset | null> => {
           const contractAddress = b.contractAddress;
           try {
-              // console.log(`[Alchemy Portfolio V5] Calling alchemy_getTokenMetadata for ${contractAddress}`); // Opcional
-              // (Não adicionamos DIAG V5 aqui para não poluir muito, focamos nos blocantes)
-              const metadataResponse = await fetch(alchemyRpcUrl, { // Usa a mesma URL RPC
+              const metadataResponse = await fetch(alchemyRpcUrl, {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
                   body: JSON.stringify({
@@ -164,7 +162,6 @@ export async function getPortfolioData(walletAddress: string, networkId: string 
              try { nativeBalanceData = JSON.parse(nativeBalanceBodyText); } catch(e) {
                  console.error('[Alchemy Portfolio V5] Failed to parse eth_getBalance JSON:', e);
                  console.error('[Alchemy Portfolio V5] Response body was:', nativeBalanceBodyText);
-                 // Não lança erro fatal, apenas não adiciona ETH
                  nativeBalanceData = { result: null }; // Define um fallback
              }
 
@@ -178,13 +175,10 @@ export async function getPortfolioData(walletAddress: string, networkId: string 
                  console.warn(`[Alchemy Portfolio V5] eth_getBalance ok but no result. Data:`, nativeBalanceData);
              }
         } else {
-             // O log de erro agora está aqui
              console.error(`[Alchemy Portfolio V5] eth_getBalance failed. Status: ${nativeBalanceResponse.status}, Body: ${nativeBalanceBodyText}`);
-             // Não lança erro fatal
         }
     } catch (nativeError) {
         console.error('[Alchemy Portfolio V5] CRITICAL Error fetching native balance:', nativeError);
-         // Não lança erro fatal
     }
 
     console.log(`[Alchemy Portfolio V5] Processed. Total assets (incl. native): ${validAssets.length}`);
@@ -198,15 +192,12 @@ export async function getPortfolioData(walletAddress: string, networkId: string 
 }
 
 
-// --- FUNÇÃO createSentinelRule (REVISADA v3 - usando Alchemy API REST) ---
+// --- FUNÇÃO createSentinelRule (SIMPLIFICADA - SEM CRIAÇÃO DE WEBHOOK EXTERNO) ---
 export async function createSentinelRule(formData: FormData) {
-  const ALCHEMY_SIGNING_SECRET_LOCAL = process.env.ALCHEMY_WEBHOOK_SIGNING_SECRET;
-  const WEBHOOK_CALLBACK_URL = `${process.env.NEXT_PUBLIC_SITE_URL}/api/alchemy-webhook`; // Endpoint do Alchemy Listener
-  const ALCHEMY_APP_ID_LOCAL = process.env.ALCHEMY_APP_ID;
+  // Apenas extrai dados e salva no DB localmente
+  console.log('[Webhook Create STUB v2] Received request to create rule.'); // Log Atualizado
 
-  if (!ALCHEMY_SIGNING_SECRET_LOCAL) throw new Error('ALCHEMY_WEBHOOK_SIGNING_SECRET env var is required');
-  if (!ALCHEMY_APP_ID_LOCAL) throw new Error('ALCHEMY_APP_ID env var is required');
-
+  // 1. Extrair dados do formulário
   const ruleData = {
     name: formData.get('name') as string,
     ownerAddress: formData.get('ownerAddress') as string,
@@ -216,68 +207,38 @@ export async function createSentinelRule(formData: FormData) {
     discordUrl: formData.get('discordUrl') as string,
   };
 
-  let alchemyNetwork: string;
-  if (ruleData.networkId === 'sepolia-testnet') { alchemyNetwork = 'ETH_SEPOLIA'; }
-  else { throw new Error(`Unsupported network: ${ruleData.networkId}`); }
+  // *** BLOCO DE CHAMADA PARA ALCHEMY REMOVIDO ***
+  console.warn('[Webhook Create STUB v2] Skipping actual Alchemy webhook creation.');
+  // Usaremos um placeholder para o ID, pois não temos um ID real da Alchemy
+  const placeholderWebhookId = `placeholder_${Date.now()}`;
 
-  const ALCHEMY_CREATE_WEBHOOK_URL = 'https://dashboard.alchemy.com/api/create-webhook';
-  const alchemyPayload = {
-      network: alchemyNetwork,
-      webhook_type: "alchemy_minedTransactions", // Monitora txs de/para o endereço
-      webhook_url: WEBHOOK_CALLBACK_URL,
-      app_id: ALCHEMY_APP_ID_LOCAL,
-      addresses: [ruleData.contractAddress],
-  };
 
-  console.log('[Alchemy Webhook Create V3] Attempting creation:', JSON.stringify(alchemyPayload));
-  const response = await fetch(ALCHEMY_CREATE_WEBHOOK_URL, {
-      method: 'POST',
-      headers: {
-          'Authorization': `Bearer ${ALCHEMY_SIGNING_SECRET_LOCAL}`, // Autenticação CORRETA
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-       },
-      body: JSON.stringify(alchemyPayload),
-  });
-
-  const responseBodyText = await response.text();
-  console.log(`[Alchemy Webhook Create V3] Response status: ${response.status}`);
-  console.log(`[Alchemy Webhook Create V3] Raw response body:`, responseBodyText.substring(0, 500) + '...');
-
-  if (!response.ok) {
-      console.error(`[Alchemy Webhook Create V3] API Error! Status: ${response.status}`);
-      console.error(`[Alchemy Webhook Create V3] API Body: ${responseBodyText}`);
-      let errorDetail = responseBodyText; try { const errorJson = JSON.parse(responseBodyText); errorDetail = errorJson.message || errorJson.error || responseBodyText; } catch(e) {/* Ignore */}
-      throw new Error(`Failed to create Alchemy webhook subscription. Status: ${response.status}. Detail: ${errorDetail}`);
-  }
-
-  let alchemyData; try { alchemyData = JSON.parse(responseBodyText); } catch(e) {
-      console.error('[Alchemy Webhook Create V3] Failed to parse JSON response:', e);
-      console.error('[Alchemy Webhook Create V3] Response body was:', responseBodyText);
-      throw new Error('Failed to parse JSON response from Alchemy webhook creation');
-  }
-
-  // A estrutura CORRETA da resposta parece ser { data: { id: "wh_..." } }
-  const alchemyWebhookId = alchemyData?.data?.id;
-  if (!alchemyWebhookId) {
-      console.error('[Alchemy Webhook Create V3] Invalid response structure, missing data.id:', alchemyData);
-      throw new Error('Alchemy API response is missing webhook ID (data.id)');
-  }
-  console.log(`[Alchemy Webhook Create V3] Webhook created successfully ID: ${alchemyWebhookId}`);
-
+  // 3. Salvar a regra no nosso DB (com placeholder ID)
   try {
-      await prisma.rule.create({ data: {
-          name: ruleData.name, ownerAddress: ruleData.ownerAddress, networkId: ruleData.networkId,
-          contractAddress: ruleData.contractAddress, eventName: ruleData.eventName,
-          alchemyWebhookId: alchemyWebhookId, // Salva ID Alchemy no campo renomeado
-          action: { create: { type: 'DISCORD_WEBHOOK', targetUrl: ruleData.discordUrl } }
-      }});
-      console.log(`[DB] Rule saved successfully ID: ${alchemyWebhookId}`);
+    await prisma.rule.create({
+      data: {
+        name: ruleData.name,
+        ownerAddress: ruleData.ownerAddress,
+        networkId: ruleData.networkId,
+        contractAddress: ruleData.contractAddress,
+        eventName: ruleData.eventName,
+        alchemyWebhookId: placeholderWebhookId, // Salva o placeholder no campo renomeado do schema
+        action: {
+          create: {
+            type: 'DISCORD_WEBHOOK',
+            targetUrl: ruleData.discordUrl,
+            // webhookSecret foi removido do schema
+          },
+        },
+      },
+    });
+     console.log(`[DB v2] Rule saved successfully with placeholder ID: ${placeholderWebhookId}`);
   } catch (dbError) {
-      console.error('[DB] Failed to save rule:', dbError);
-      // TODO: Implementar exclusão do webhook na Alchemy se o DB falhar
-      throw new Error('Failed to save rule to database');
+    console.error('[DB v2] Failed to save rule:', dbError);
+    throw new Error('Failed to save rule to database');
   }
+
+  // 4. Revalidar o cache
   revalidatePath('/dashboard');
 }
 
@@ -285,18 +246,18 @@ export async function createSentinelRule(formData: FormData) {
 // --- FUNÇÃO getSentinelRules (Usa Prisma - Nenhuma mudança necessária) ---
 export async function getSentinelRules(ownerAddress: string) {
   noStore();
-   console.log(`[DB] Fetching rules for owner: ${ownerAddress}`);
-  // Verifica se o prisma client foi inicializado corretamente (debug)
+   console.log(`[DB v2] Fetching rules for owner: ${ownerAddress}`);
   if (!prisma) {
-      console.error("[DB] Prisma client is not initialized!");
+      console.error("[DB v2] Prisma client is not initialized!");
       return [];
   }
   try {
+      // Garante que o campo buscado no 'where' está correto
       const rules = await prisma.rule.findMany({ where: { ownerAddress }, orderBy: { createdAt: 'desc' } });
-      console.log(`[DB] Found ${rules.length} rules.`);
+      console.log(`[DB v2] Found ${rules.length} rules.`);
       return rules;
   } catch (dbReadError) {
-      console.error('[DB] Error fetching rules:', dbReadError);
+      console.error('[DB v2] Error fetching rules:', dbReadError);
       return []; // Retorna vazio em caso de erro de leitura
   }
 }

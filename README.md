@@ -1,36 +1,38 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Sentinel Pro - Portfolio Multichain
 
-## Getting Started
+Aplicação web para visualização de portfólio de ativos on-chain em múltiplas redes EVM.
 
-First, run the development server:
+## Como usar
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
-```
+1. Acesse o site e conecte sua carteira (MetaMask, RainbowKit, etc).
+2. Escolha a rede desejada no seletor do dashboard.
+3. Visualize seus ativos (ETH, tokens ERC20) e seus logos.
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Redes suportadas
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+- Ethereum Mainnet
+- Sepolia Testnet
+- Goerli Testnet
+- Polygon Mainnet
+- Polygon Mumbai
+- Arbitrum One
+- Optimism
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Limitações
 
-## Learn More
+- Apenas redes EVM são suportadas (não inclui Bitcoin, Solana, etc).
+- Apenas tokens ERC20 e saldo nativo são exibidos.
+- NFTs e outros tipos de ativos não são mostrados.
+- O saldo e tokens dependem do provedor RPC (Alchemy) e da rede selecionada.
 
-To learn more about Next.js, take a look at the following resources:
+## Ambiente
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- Certifique-se de configurar a variável `ALCHEMY_API_KEY` no ambiente de produção.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Deploy
 
-## Deploy on Vercel
+O deploy pode ser feito facilmente na Vercel. Após o push para o repositório, a Vercel faz o deploy automático.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Projeto baseado em Next.js, React, Tailwind, Prisma e integração com Alchemy/CoinGecko.

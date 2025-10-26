@@ -7,26 +7,3 @@ datasource db {
   url      = env("MANUAL_DB_URL") // <-- Usando a variável manual
 }
 
-model Rule {
-  id               String    @id @default(cuid())
-  name             String
-  ownerAddress     String
-  networkId        String
-  contractAddress  String
-  eventName        String
-  alchemyWebhookId String    @unique // RENOMEADO para Alchemy
-  action           Action?
-  createdAt        DateTime  @default(now())
-
-  @@index([ownerAddress])
-}
-
-model Action {
-  id        String   @id @default(cuid())
-  ruleId    String   @unique
-  rule      Rule     @relation(fields: [ruleId], references: [id], onDelete: Cascade)
-
-  type      String   // Ex: "DISCORD_WEBHOOK"
-  targetUrl String   // A URL do webhook do Discord
-  // Campo webhookSecret REMOVIDO
-}

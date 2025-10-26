@@ -6,36 +6,39 @@ const prisma = new PrismaClient();
 // Lê o segredo de assinatura GLOBAL da Alchemy do ambiente
 const ALCHEMY_SIGNING_SECRET = process.env.ALCHEMY_WEBHOOK_SIGNING_SECRET;
 
-// --- NOVA FUNÇÃO verifySignature (usando Alchemy global secret) ---
+// --- FUNÇÃO verifySignature (MODO DIAGNÓSTICO V6) ---
 async function verifySignature(request: NextRequest, body: string): Promise<boolean> {
-  // Alchemy envia a assinatura no header 'x-alchemy-signature'
-  const signature = request.headers.get('x-alchemy-signature');
+  const signature = request.headers.get('x-alchemy-signature'); 
+  console.log(`[DIAG V6] Received signature header: ${signature ? signature.substring(0,10)+'...' : 'MISSING'}`); // Loga início da assinatura recebida
 
-  if (!signature || !ALCHEMY_SIGNING_SECRET) {
-    console.warn('[Alchemy Listener] Webhook signature or secret missing.');
-    return false;
-  }
+  if (!signature) { console.warn('[DIAG V6] Signature header missing.'); return false; }
+  if (!ALCHEMY_SIGNING_SECRET) { console.warn('[DIAG V6] ALCHEMY_SIGNING_SECRET env var missing.'); return false; }
 
   try {
-    // Calcula o HMAC-SHA256 do corpo RAW usando o segredo global
+    // Loga início do segredo usado (NÃO LOGUE O SEGREDO INTEIRO!)
+    console.log(`[DIAG V6] Using signing secret starting with: ${ALCHEMY_SIGNING_SECRET.substring(0, 5)}...`);
+
     const hash = crypto
       .createHmac('sha256', ALCHEMY_SIGNING_SECRET)
-      .update(body, 'utf8') // Especifica a codificação do corpo
-      .digest('hex'); // A assinatura da Alchemy geralmente está em hexadecimal
+      .update(body, 'utf8') // Garante codificação
+      .digest('hex');
+    console.log(`[DIAG V6] Calculated hash (hex): ${hash.substring(0, 10)}...`); // Loga início do hash calculado
 
-    // Comparação segura contra ataques de temporização
-    // Garante que ambos os buffers tenham o mesmo tamanho antes de comparar
     const trusted = Buffer.from(hash, 'hex');
     const untrusted = Buffer.from(signature, 'hex');
+
     if (trusted.length !== untrusted.length) {
-        console.warn('[Alchemy Listener] Signature length mismatch.');
+        console.warn(`[DIAG V6] Signature length mismatch! Calculated (${trusted.length}) vs Received (${untrusted.length})`);
         return false;
     }
 
-    return crypto.timingSafeEqual(trusted, untrusted);
+    const signaturesMatch = crypto.timingSafeEqual(trusted, untrusted);
+    console.log(`[DIAG V6] Signatures match: ${signaturesMatch}`); // Loga o resultado da comparação
+
+    return signaturesMatch;
 
   } catch (error) {
-    console.error('[Alchemy Listener] Error during signature verification:', error);
+    console.error('[DIAG V6] Error during signature verification:', error);
     return false;
   }
 }
